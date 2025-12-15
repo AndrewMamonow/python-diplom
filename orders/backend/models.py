@@ -2,9 +2,14 @@ from django.db import models
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.utils.translation import gettext_lazy as _
+from django_rest_passwordreset.tokens import get_token_generator
 
+USER_TYPE_CHOICES = (
+    ('shop', 'Магазин'),
+    ('buyer', 'Покупатель'),
 
-
+)
 class UserManager(BaseUserManager):
     """
     Миксин для управления пользователями
@@ -14,9 +19,10 @@ class UserManager(BaseUserManager):
     def _create_user(self, email, password, **extra_fields):
         """
         Create and save a user with the given username, email, and password.
+        Создание и сохранение параметров пользователя (имя, почта, пароль)
         """
         if not email:
-            raise ValueError('The given email must be set')
+            raise ValueError('Почта должна быть указана')
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
@@ -45,11 +51,7 @@ class User(AbstractUser):
     """
     Стандартная модель пользователей
     """
-    USER_TYPE_CHOICES = (
-    ('shop', 'Магазин'),
-    ('buyer', 'Покупатель'),
-
-)
+    
     REQUIRED_FIELDS = []
     objects = UserManager()
     USERNAME_FIELD = 'email'
@@ -63,7 +65,7 @@ class User(AbstractUser):
         help_text=_('Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.'),
         validators=[username_validator],
         error_messages={
-            'unique': _("A user with that username already exists."),
+            'unique': _("Пользователь с таким именем уже есть."),
         },
     )
     is_active = models.BooleanField(
@@ -183,8 +185,6 @@ class ProductParameter(models.Model):
             models.UniqueConstraint(fields=['product_info', 'parameter'], name='unique_product_parameter'),
         ]
         
-
-
         
 class Contact(models.Model):
     objects = models.manager.Manager()
@@ -237,6 +237,9 @@ class Order(models.Model):
     def __str__(self):
         return str(self.dt)
     
+    # @property
+    # def sum(self):
+    #     return self.ordered_items.aggregate(total=Sum("quantity"))["total"]
 
 class OrderItem(models.Model):
     objects = models.manager.Manager()
