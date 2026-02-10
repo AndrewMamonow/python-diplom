@@ -1,103 +1,285 @@
 from rest_framework import serializers
-
-from backend.models import (
-    Contact, 
+from django.contrib.auth import get_user_model
+from django.core.validators import EmailValidator
+from .models import (
     User, 
-    Category,
-    Shop,  
+    Supplier, 
+    Category, 
+    Attribute, 
     Product, 
-    ProductInfo, 
-    ProductParameter, 
+    ProductAttribute, 
     Order, 
-    OrderItem,
-    )
+    OrderItem, 
+    PriceUpdateLog
+)
+from decimal import Decimal
 
 
-
-class ContactSerializer(serializers.ModelSerializer):
-    
-    class Meta:
-        model = Contact
-        fields = ('id', 'city', 'street', 'house', 'structure', 'building', 'apartment', 'user', 'phone')
-        read_only_fields = ('id',)
-        extra_kwargs = {
-            'user': {'write_only': True}
-        }
-
+User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
-    contacts = ContactSerializer(read_only=True, many=True)
-
+    """Сериализатор пользователя"""
     class Meta:
         model = User
-        fields = ('id', 'first_name', 'last_name', 'email', 'company', 'position', 'contacts')
-        read_only_fields = ('id',)
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name', 
+            'user_type', 'phone', 'company_name', 'address',
+            'supplier_code', 'accepts_orders', 'is_active'
+        ]
+        read_only_fields = ['user_type', 'supplier_code']
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует.")
+        return value
+
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    """Сериализатор для регистрации"""
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True, min_length=8)
+    
+    class Meta:
+        model = User
+        fields = [
+            'username', 'email', 'password', 'password_confirm',
+            'first_name', 'last_name', 'user_type', 'phone',
+            'company_name', 'address'
+        ]
+    
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError({
+                'password_confirm': 'Пароли не совпадают.'
+            })
+        if User.objects.filter(username=data['username']).exists():
+            raise serializers.ValidationError({
+                'username': 'Пользователь с таким именем уже существует.'
+            })
+        if User.objects.filter(email=data['email']).exists():
+            raise serializers.ValidationError({
+                'email': 'Пользователь с таким email уже существует.'
+            })
+        return data
+    
+    def create(self, validated_data):
+        validated_data.pop('password_confirm')
+        user_type = validated_data.get('user_type', 'client')
         
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+            user_type=user_type,
+            phone=validated_data.get('phone', ''),
+            company_name=validated_data.get('company_name', ''),
+            address=validated_data.get('address', ''),
+        )
+        
+        # Если поставщик, генерируем код
+        if user_type == 'supplier':
+            from django.utils.crypto import get_random_string
+            user.supplier_code = f'SUP{get_random_string(8).upper()}'
+            user.save()
+        
+        return user
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    """Сериализатор для восстановления пароля"""
+    email = serializers.EmailField(validators=[EmailValidator()])
+
+
+class SupplierSerializer(serializers.ModelSerializer):
+    """Сериализатор поставщика"""
+    user = UserSerializer(read_only=True)
+    
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+
 
 class CategorySerializer(serializers.ModelSerializer):
+    """Сериализатор категории"""
+    children = serializers.SerializerMethodField()
     
     class Meta:
         model = Category
-        fields = ('id', 'name',)
-        read_only_fields = ('id',)
+        fields = '__all__'
+    
+    def get_children(self, obj):
+        children = obj.children.all()
+        return CategorySerializer(children, many=True).data
 
 
-class ShopSerializer(serializers.ModelSerializer):
+class AttributeSerializer(serializers.ModelSerializer):
+    """Сериализатор характеристики"""
+    class Meta:
+        model = Attribute
+        fields = '__all__'
+
+
+class ProductAttributeSerializer(serializers.ModelSerializer):
+    """Сериализатор значений характеристик товара"""
+    attribute_name = serializers.CharField(source='attribute.name', read_only=True)
     
     class Meta:
-        model = Shop
-        fields = ('id', 'name', 'state',)
-        read_only_fields = ('id',)
+        model = ProductAttribute
+        fields = ['id', 'attribute', 'attribute_name', 'value']
+        read_only_fields = ['attribute_name']
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    category = serializers.StringRelatedField()
-
+    """Сериализатор товара"""
+    supplier_name = serializers.CharField(source='supplier.company_name', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    attributes = ProductAttributeSerializer(many=True, required=False)
+    
     class Meta:
         model = Product
-        fields = ('name', 'category',)
+        fields = '__all__'
+        read_only_fields = ['supplier_name', 'category_name']
+    
+    def create(self, validated_data):
+        attributes_data = validated_data.pop('attributes', [])
+        product = Product.objects.create(**validated_data)
+        
+        for attr_data in attributes_data:
+            ProductAttribute.objects.create(product=product, **attr_data)
+        
+        return product
+    
+    def update(self, instance, validated_data):
+        attributes_data = validated_data.pop('attributes', None)
+        
+        # Обновляем основные поля
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Обновляем характеристики
+        if attributes_data is not None:
+            instance.attributes.all().delete()
+            for attr_data in attributes_data:
+                ProductAttribute.objects.create(product=instance, **attr_data)
+        
+        return instance
 
 
-class ProductParameterSerializer(serializers.ModelSerializer):
-    parameter = serializers.StringRelatedField()
-
-    class Meta:
-        model = ProductParameter
-        fields = ('parameter', 'value',)
-
-
-class ProductInfoSerializer(serializers.ModelSerializer):
-    product = ProductSerializer(read_only=True)
-    product_parameters = ProductParameterSerializer(read_only=True, many=True)
-
-    class Meta:
-        model = ProductInfo
-        fields = ('id', 'model', 'product', 'shop', 'quantity', 'price', 'price_rrc', 'product_parameters',)
-        read_only_fields = ('id',)
+class ProductImportSerializer(serializers.Serializer):
+    """Сериализатор для импорта товаров"""
+    file = serializers.FileField()
+    update_existing = serializers.BooleanField(default=True)
+    format = serializers.ChoiceField(
+        choices=['auto', 'csv', 'json', 'yaml', 'yml'],
+        default='auto',
+        help_text='Формат файла. Если auto - определяется по расширению'
+    )
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    """Сериализатор позиции заказа"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    supplier_name = serializers.CharField(source='supplier.company_name', read_only=True)
+    
     class Meta:
         model = OrderItem
-        fields = ('id', 'product_info', 'quantity', 'order',)
-        read_only_fields = ('id',)
-        extra_kwargs = {
-            'order': {'write_only': True}
-        }
-
-
-class OrderItemCreateSerializer(OrderItemSerializer):
-    product_info = ProductInfoSerializer(read_only=True)
+        fields = '__all__'
+        read_only_fields = ['product_name', 'supplier_name', 'subtotal']
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    ordered_items = OrderItemCreateSerializer(read_only=True, many=True)
-    total_sum = serializers.IntegerField()
-    contact = ContactSerializer(read_only=True)
-
+    """Сериализатор заказа"""
+    items = OrderItemSerializer(many=True)
+    client_name = serializers.CharField(source='client.username', read_only=True)
+    total_items = serializers.SerializerMethodField()
+    
     class Meta:
         model = Order
-        fields = ('id', 'ordered_items', 'state', 'dt', 'total_sum', 'contact',)
-        read_only_fields = ('id',)
+        fields = '__all__'
+        read_only_fields = [
+            'order_number', 'total_amount', 'client_name', 
+            'created_at', 'updated_at', 'confirmed_at'
+        ]
+    
+    def get_total_items(self, obj):
+        return obj.items.count()
+    
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("Заказ должен содержать хотя бы одну позицию.")
+        
+        # Проверяем доступность товаров
+        for item_data in value:
+            product = item_data.get('product')
+            quantity = item_data.get('quantity', 0)
+            
+            if not product:
+                raise serializers.ValidationError("Товар обязателен для каждой позиции.")
+            
+            if quantity <= 0:
+                raise serializers.ValidationError("Количество должно быть положительным.")
+            
+            if quantity > product.stock_quantity:
+                raise serializers.ValidationError(
+                    f"Недостаточно товара {product.name} на складе. "
+                    f"Доступно: {product.stock_quantity}"
+                )
+        
+        return value
+    
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        
+        # Генерируем номер заказа
+        from django.utils.crypto import get_random_string
+        order_number = f'ORD{get_random_string(10).upper()}'
+        
+        # Создаем заказ
+        order = Order.objects.create(
+            order_number=order_number,
+            **validated_data
+        )
+        
+        # Создаем позиции заказа
+        total_amount = Decimal('0.00')
+        for item_data in items_data:
+            product = item_data['product']
+            quantity = item_data['quantity']
+            price = item_data.get('price', product.price)
+            
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=quantity,
+                price=price
+            )
+            
+            total_amount += quantity * price
+        
+        order.total_amount = total_amount
+        order.save()
+        
+        return order
+    
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)
+        
+        # Обновляем основные поля
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        return instance
 
 
+class PriceUpdateLogSerializer(serializers.ModelSerializer):
+    """Сериализатор лога обновления прайса"""
+    supplier_name = serializers.CharField(source='supplier.company_name', read_only=True)
+    
+    class Meta:
+        model = PriceUpdateLog
+        fields = '__all__'
+        read_only_fields = ['supplier_name']
