@@ -366,7 +366,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 error_msg = f"Строка {row_num}: {error_msg}"
             return False, [error_msg]
     
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser], url_path='import')
     def import_products(self, request):
         """
         Импорт товаров из файла.
