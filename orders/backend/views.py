@@ -6,13 +6,12 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Q, Sum
 from django_filters.rest_framework import DjangoFilterBackend
-
+from decimal import Decimal
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import MultiPartParser, FormParser
-
 
 from .models import (
     User, 
@@ -37,13 +36,12 @@ from .serializers import (
     OrderSerializer,
     PriceUpdateLogSerializer
 )
-from .permissions import IsSupplier, IsClient
-# from .tasks import send_order_confirmation_email, send_invoice_email
+from .tasks import send_order_confirmation_email, send_invoice_email
 import csv
 import io
 import json
 import yaml
-from decimal import Decimal
+
 
 
 User = get_user_model()

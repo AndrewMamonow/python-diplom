@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.core.validators import EmailValidator
+from decimal import Decimal
+
 from .models import (
     User, 
     Supplier, 
@@ -12,7 +14,7 @@ from .models import (
     OrderItem, 
     PriceUpdateLog
 )
-from decimal import Decimal
+
 
 
 User = get_user_model()

@@ -5,8 +5,12 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from .views import (
-    UserViewSet, SupplierViewSet, CategoryViewSet,
-    AttributeViewSet, ProductViewSet, OrderViewSet,
+    UserViewSet, 
+    SupplierViewSet, 
+    CategoryViewSet,
+    AttributeViewSet, 
+    ProductViewSet, 
+    OrderViewSet,
     PriceUpdateLogViewSet
 )
 
