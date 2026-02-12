@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Q, Sum
-from rest_framework.filters import DjangoFilterBackend
+from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
@@ -37,7 +37,7 @@ from .serializers import (
     OrderSerializer,
     PriceUpdateLogSerializer
 )
-# from .permissions import IsSupplier, IsClient
+from .permissions import IsSupplier, IsClient
 # from .tasks import send_order_confirmation_email, send_invoice_email
 import csv
 import io
