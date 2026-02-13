@@ -12,6 +12,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import MultiPartParser, FormParser
+import csv
+import io
+import json
+import yaml
 
 from .models import (
     User, 
@@ -21,7 +25,6 @@ from .models import (
     Product, 
     ProductAttribute, 
     Order, 
-    OrderItem, 
     PriceUpdateLog
 )
 from .serializers import (
@@ -37,11 +40,6 @@ from .serializers import (
     PriceUpdateLogSerializer
 )
 from .tasks import send_order_confirmation_email, send_invoice_email
-import csv
-import io
-import json
-import yaml
-
 
 
 User = get_user_model()

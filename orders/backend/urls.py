@@ -40,6 +40,7 @@ urlpatterns = [
     path('suppliers/<int:pk>/toggle-accept-orders/', 
          SupplierViewSet.as_view({'post': 'toggle_accept_orders'}), 
          name='supplier-toggle-accept-orders'),
+    
     # Order endpoints
     path('orders/<int:pk>/confirm/', 
          OrderViewSet.as_view({'post': 'confirm'}), 
