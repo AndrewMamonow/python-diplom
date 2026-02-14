@@ -1,9 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser, Group, Permission
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ValidationError
 from decimal import Decimal
-
+import re
 
 class User(AbstractUser):
     """Расширенная модель пользователя"""
@@ -63,7 +64,18 @@ class Supplier(models.Model):
     phone = models.CharField(max_length=20)
     email = models.EmailField()
     address = models.TextField()
-    tax_number = models.CharField(max_length=50, unique=True)
+     # Валидация ИНН: только цифры, 10 или 12 знаков
+    tax_number = models.CharField(
+        max_length=12,
+        unique=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{10}|\d{12}$',
+                message='ИНН должен содержать 10 цифр (для юр.лиц) или 12 цифр (для ИП)'
+            )
+        ],
+        help_text='ИНН поставщика (10 цифр для юр.лиц, 12 цифр для ИП)'
+    )
     bank_details = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -78,7 +90,23 @@ class Supplier(models.Model):
     def __str__(self):
         return self.company_name
 
-
+    def clean(self):
+        """Дополнительная валидация перед сохранением"""
+        super().clean()
+        
+        # Проверка контрольных цифр ИНН
+        if self.tax_number:
+            from .serializers import validate_tax_number, validate_inn_10, validate_inn_12
+            
+            cleaned = re.sub(r'[\s\-]', '', self.tax_number)
+            
+            if len(cleaned) == 10 and not validate_inn_10(cleaned):
+                raise ValidationError({'tax_number': 'Неверная контрольная сумма ИНН (10 цифр)'})
+            
+            elif len(cleaned) == 12 and not validate_inn_12(cleaned):
+                raise ValidationError({'tax_number': 'Неверная контрольная сумма ИНН (12 цифр)'})
+            
+            
 class Category(models.Model):
     """Категория товаров"""
     name = models.CharField(max_length=255, unique=True)

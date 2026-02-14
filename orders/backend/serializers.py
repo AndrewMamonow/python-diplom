@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.core.validators import EmailValidator
 from decimal import Decimal
+import re
 
 from .models import (
     User, 
@@ -34,26 +35,91 @@ class UserSerializer(serializers.ModelSerializer):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Пользователь с таким email уже существует.")
         return value
+    
+    
+def validate_tax_number(value):
+    """
+    Валидация ИНН (ИНН РФ):
+    - 10 цифр для юридических лиц
+    - 12 цифр для индивидуальных предпринимателей
+    """
+    if not value:
+        return value
+    
+    # Удаляем пробелы и дефисы
+    cleaned = re.sub(r'[\s\-]', '', value)
+    
+    # Проверяем, что остались только цифры
+    if not cleaned.isdigit():
+        raise serializers.ValidationError("ИНН должен содержать только цифры")
+    
+    # Проверяем длину
+    if len(cleaned) not in [10, 12]:
+        raise serializers.ValidationError("ИНН должен содержать 10 цифр (для юр.лиц) или 12 цифр (для ИП)")
+    
+    # Проверка контрольных цифр для 10-значного ИНН
+    if len(cleaned) == 10:
+        if not validate_inn_10(cleaned):
+            raise serializers.ValidationError("Неверная контрольная сумма ИНН (10 цифр)")
+    
+    # Проверка контрольных цифр для 12-значного ИНН
+    elif len(cleaned) == 12:
+        if not validate_inn_12(cleaned):
+            raise serializers.ValidationError("Неверная контрольная сумма ИНН (12 цифр)")
+    
+    return cleaned
+
+
+def validate_inn_10(inn):
+    """Проверка контрольных цифр для 10-значного ИНН (юр.лица)"""
+    coefficients = [2, 4, 10, 3, 5, 9, 4, 6, 8]
+    control_sum = sum(int(inn[i]) * coefficients[i] for i in range(9))
+    control_digit = (control_sum % 11) % 10
+    return control_digit == int(inn[9])
+
+
+def validate_inn_12(inn):
+    """Проверка контрольных цифр для 12-значного ИНН (ИП)"""
+    # Первый контрольный разряд
+    coefficients_1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+    control_sum_1 = sum(int(inn[i]) * coefficients_1[i] for i in range(10))
+    control_digit_1 = (control_sum_1 % 11) % 10
+    
+    # Второй контрольный разряд
+    coefficients_2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+    control_sum_2 = sum(int(inn[i]) * coefficients_2[i] for i in range(11))
+    control_digit_2 = (control_sum_2 % 11) % 10
+    
+    return control_digit_1 == int(inn[10]) and control_digit_2 == int(inn[11])
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """Сериализатор для регистрации"""
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True, min_length=8)
+    tax_number = serializers.CharField(
+        max_length=12, 
+        required=False,
+        allow_blank=True,
+        help_text="ИНН поставщика (10 цифр для юр.лиц, 12 цифр для ИП)"
+    )
     
     class Meta:
         model = User
         fields = [
             'username', 'email', 'password', 'password_confirm',
             'first_name', 'last_name', 'user_type', 'phone',
-            'company_name', 'address'
+            'company_name', 'address', 'tax_number'
         ]
     
     def validate(self, data):
+        # Проверка паролей
         if data['password'] != data['password_confirm']:
             raise serializers.ValidationError({
                 'password_confirm': 'Пароли не совпадают.'
             })
+        
+        # Проверка уникальности
         if User.objects.filter(username=data['username']).exists():
             raise serializers.ValidationError({
                 'username': 'Пользователь с таким именем уже существует.'
@@ -62,11 +128,24 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'email': 'Пользователь с таким email уже существует.'
             })
+        
+        # Валидация ИНН для поставщиков
+        if data.get('user_type') == 'supplier':
+            if not data.get('tax_number'):
+                raise serializers.ValidationError({
+                    'tax_number': 'ИНН обязателен для поставщиков.'
+                })
+            try:
+                data['tax_number'] = validate_tax_number(data['tax_number'])
+            except serializers.ValidationError as e:
+                raise serializers.ValidationError({'tax_number': str(e)})
+        
         return data
     
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         user_type = validated_data.get('user_type', 'client')
+        tax_number = validated_data.pop('tax_number', None)
         
         user = User.objects.create_user(
             username=validated_data['username'],
@@ -80,11 +159,22 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             address=validated_data.get('address', ''),
         )
         
-        # Если поставщик, генерируем код
+        # Если поставщик, генерируем код и создаём профиль
         if user_type == 'supplier':
             from django.utils.crypto import get_random_string
             user.supplier_code = f'SUP{get_random_string(8).upper()}'
             user.save()
+            
+            # Создаём профиль поставщика
+            Supplier.objects.create(
+                user=user,
+                company_name=user.company_name,
+                contact_person=f"{user.first_name} {user.last_name}",
+                phone=user.phone,
+                email=user.email,
+                address=user.address,
+                tax_number=tax_number  # ← Передаём ИНН
+            )
         
         return user
 

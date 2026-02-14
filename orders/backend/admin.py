@@ -33,7 +33,7 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
-    list_display = ['company_name', 'contact_person', 'phone', 'email', 'is_active']
+    list_display = ['company_name', 'contact_person', 'phone', 'email', 'tax_number','is_active']
     list_filter = ['is_active']
     search_fields = ['company_name', 'contact_person', 'email']
     readonly_fields = ['created_at', 'updated_at']
