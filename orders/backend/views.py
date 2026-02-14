@@ -1,6 +1,4 @@
 from django.db import transaction
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.utils import timezone
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -40,7 +38,15 @@ from .serializers import (
     PriceUpdateLogSerializer
 )
 from .tasks import send_order_confirmation_email, send_invoice_email
+from .cache_utils import (
+    CacheManager, 
+    CacheKeyBuilder, 
+    QuerySetCache,
+)
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -173,6 +179,23 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CategorySerializer
     permission_classes = [permissions.AllowAny]
 
+    def get_queryset(self):
+        """Кэширование списка категорий"""
+        cache_key = CacheKeyBuilder.model_list('category', {'parent__isnull': True})
+        cached = CacheManager.get(cache_key)
+        
+        if cached is not None:
+            logger.debug("Using cached categories")
+            return Category.objects.filter(pk__in=[c['id'] for c in cached])
+        
+        # Получаем данные из БД
+        queryset = super().get_queryset()
+        serialized = CategorySerializer(queryset, many=True).data
+        
+        # Кэшируем результат
+        CacheManager.set(cache_key, serialized, timeout=60 * 60)  # 1 час
+        
+        return queryset
 
 class AttributeViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet для характеристик (только чтение)"""
@@ -201,6 +224,14 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Поставщики видят только свои товары
         if self.request.user.user_type == 'supplier':
             queryset = queryset.filter(supplier__user=self.request.user)
+        
+        # Кэширование для списка товаров
+        if self.action == 'list':
+            cache_key = CacheKeyBuilder.product_catalog(
+                supplier_id=self.request.user.id if self.request.user.user_type == 'supplier' else None,
+                is_active=True if self.request.user.user_type == 'client' else None
+            )
+            return QuerySetCache.get_or_set(queryset, cache_key, timeout=60 * 10)  # 10 минут
         
         return queryset
     
@@ -646,7 +677,19 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Статистика по заказам"""
+        """Статистика по заказам с кэшированием"""
+         # Определяем ключ кэша в зависимости от пользователя
+        if request.user.user_type == 'supplier':
+            cache_key = CacheKeyBuilder.order_statistics()
+        else:
+            cache_key = CacheKeyBuilder.order_statistics(request.user.id)
+        
+        cached = CacheManager.get(cache_key)
+        if cached is not None:
+            logger.debug("Using cached order statistics")
+            return Response(cached)
+        
+        # Получаем данные из БД
         queryset = self.get_queryset()
         
         stats = {
@@ -662,6 +705,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         for status_choice in Order.STATUS_CHOICES:
             status_value = status_choice[0]
             stats['by_status'][status_value] = queryset.filter(status=status_value).count()
+            
+        # Кэшируем результат
+        CacheManager.set(cache_key, stats, timeout=60 * 2)  # 2 минуты
         
         return Response(stats)
 

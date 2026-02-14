@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'django_filters',
     'drf_spectacular', 
     'celery',
-    'backend',
+    'backend.apps.BackendConfig',
 ]
 
 MIDDLEWARE = [
@@ -205,3 +205,45 @@ SPECTACULAR_SETTINGS = {
     # Скрыть некоторые поля из документации
     'COMPONENT_NO_READ_ONLY_REQUIRED': True,
 }
+
+# Redis Cache settings
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',  # База данных 1 для кэша
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'PARSER_CLASS': 'redis.connection.HiredisParser',  # Опционально, для ускорения
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 50,
+                'retry_on_timeout': True,
+            }
+        },
+        'KEY_PREFIX': 'purchasing_system',  # Префикс для всех ключей
+        'TIMEOUT': 60 * 15,  # 15 минут по умолчанию
+    },
+    'session': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/2',  # База данных 2 для сессий
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'session',
+    }
+}
+
+# Используем Redis для сессий
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'session'
+
+# Настройки для кэширования в приложении
+CACHE_MIDDLEWARE_SECONDS = 600  # 10 минут для кэширования middleware
+CACHE_MIDDLEWARE_KEY_PREFIX = 'purchasing'
+
+# Настройки для кэширования Celery
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # База данных 0 для Celery
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
