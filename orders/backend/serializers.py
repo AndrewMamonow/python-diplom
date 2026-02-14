@@ -17,7 +17,6 @@ from .models import (
 )
 
 
-
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
@@ -201,7 +200,7 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = '__all__'
     
-    def get_children(self, obj):
+    def get_children(self, obj) -> str:
         children = obj.children.all()
         return CategorySerializer(children, many=True).data
 
@@ -262,8 +261,14 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class ProductImportSerializer(serializers.Serializer):
     """Сериализатор для импорта товаров"""
-    file = serializers.FileField()
-    update_existing = serializers.BooleanField(default=True)
+    file = serializers.FileField(
+        help_text='Файл с товарами (CSV, JSON или YAML)',
+        required=True
+    )
+    update_existing = serializers.BooleanField(
+        default=True,
+        help_text='Обновлять существующие товары (если SKU совпадает)'
+    )
     format = serializers.ChoiceField(
         choices=['auto', 'csv', 'json', 'yaml', 'yml'],
         default='auto',
@@ -296,7 +301,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'confirmed_at'
         ]
     
-    def get_total_items(self, obj):
+    def get_total_items(self, obj) -> int:
         return obj.items.count()
     
     def validate_items(self, value):

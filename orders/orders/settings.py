@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'django_filters',
+    'drf_spectacular', 
     'celery',
     'backend',
 ]
@@ -143,6 +144,8 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # JWT settings
@@ -153,4 +156,52 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+}
+
+# DRF Spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Orders API',
+    'DESCRIPTION': '''
+    API для автоматизации закупок в розничной сети.
+    
+    ## Основные возможности
+    
+    - **Регистрация и аутентификация** пользователей (клиентов и поставщиков)
+    - **Управление товарами** - создание, редактирование, импорт из разных форматов
+    - **Оформление заказов** - заказы с товарами от разных поставщиков
+    - **Управление заказами** - подтверждение, отмена, статистика
+    - **Импорт товаров** - поддержка CSV, JSON, YAML форматов
+    
+    ## Аутентификация
+    
+    Для доступа к защищённым эндпоинтам требуется JWT токен.
+    
+    1. Получите токен: `POST /api/token/`
+    2. Используйте в заголовке: `Authorization: Bearer <access_token>`
+    
+    ## Типы пользователей
+    
+    - **Клиент (client)** - делает закупки по каталогу
+    - **Поставщик (supplier)** - управляет товарами и обрабатывает заказы
+    
+    ## Контакты
+    
+    - **Поддержка**: support@orders.com
+    - **Версия API**: 1.0.0
+    ''',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    
+    # Настройки схемы
+    'SCHEMA_PATH_PREFIX': r'/api/',
+    
+    # Кастомизация типов
+    'ENUM_NAME_OVERRIDES': {
+        'UserTypeEnum': 'backend.models.User.USER_TYPE_CHOICES',
+        'OrderStatusEnum': 'backend.models.Order.STATUS_CHOICES',
+    },
+    
+    # Скрыть некоторые поля из документации
+    'COMPONENT_NO_READ_ONLY_REQUIRED': True,
 }

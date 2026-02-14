@@ -14,6 +14,7 @@ from .views import (
     PriceUpdateLogViewSet
 )
 
+
 router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='user')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
@@ -29,17 +30,6 @@ urlpatterns = [
     # JWT endpoints
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    
-    # User endpoints
-    path('users/register/', UserViewSet.as_view({'post': 'register'}), name='user-register'),
-    path('users/login/', UserViewSet.as_view({'post': 'login'}), name='user-login'),
-    path('users/password-reset/', UserViewSet.as_view({'post': 'password_reset'}), name='password-reset'),
-    path('users/me/', UserViewSet.as_view({'get': 'me'}), name='user-me'),
-    
-    # Supplier endpoints
-    path('suppliers/<int:pk>/toggle-accept-orders/', 
-         SupplierViewSet.as_view({'post': 'toggle_accept_orders'}), 
-         name='supplier-toggle-accept-orders'),
     
     # Order endpoints
     path('orders/<int:pk>/confirm/', 

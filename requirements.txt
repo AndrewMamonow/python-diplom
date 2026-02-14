@@ -8,3 +8,5 @@ pyyaml
 django-rest-passwordreset
 rest_framework_simplejwt
 djangorestframework-csv
+# OpenAPI Documentation
+drf-spectacular
