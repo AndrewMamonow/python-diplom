@@ -12,6 +12,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+import logging
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -59,6 +65,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    
+     # Custom middleware
+    'api.middleware.SentryMiddleware',
+    'api.middleware.APIErrorMiddleware',
+    'api.middleware.QueryCountMiddleware',
 ]
 
 ROOT_URLCONF = 'orders.urls'
@@ -421,3 +432,105 @@ JET_INDEX_DASHBOARD_ITEMS = [
 JET_CHANGE_FORM_SIBLING_LINKS = True  # Ссылки на соседние записи
 JET_SHOW_REMAINING_APPS = True  # Показывать остальные приложения
 JET_SHOW_REMAINING_APPS_TO_SUPERUSERS = True
+
+ENTRY_DSN = os.environ.get('SENTRY_DSN', 'https://your-sentry-dsn@sentry.io/123456')
+SENTRY_ENVIRONMENT = os.environ.get('SENTRY_ENVIRONMENT', 'development')
+SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', 0.1))
+
+# Инициализация Sentry
+sentry_sdk.init(
+    dsn=SENTRY_DSN,
+    integrations=[
+        DjangoIntegration(),
+        CeleryIntegration(),
+        RedisIntegration(),
+        LoggingIntegration(
+            level=logging.INFO,        # Захватывать логи уровня INFO и выше
+            event_level=logging.ERROR  # Отправлять в Sentry как события только ошибки
+        ),
+    ],
+    
+    # Настройки
+    environment=SENTRY_ENVIRONMENT,  # 'development', 'staging', 'production'
+    traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,  # Процент отслеживания запросов для профилирования
+    send_default_pii=True,  # Отправлять персональные данные (используйте осторожно!)
+    request_bodies='always',  # Всегда отправлять тела запросов
+    
+    # Фильтрация ошибок
+    ignore_errors=[
+        'django.http.Http404',
+        'django.core.exceptions.PermissionDenied',
+        KeyboardInterrupt,
+    ],
+    
+    # Перед отправкой события можно модифицировать его
+    before_send=lambda event, hint: event,
+    
+    # Теги по умолчанию
+    tags={
+        'project': 'purchasing-system',
+        'service': 'backend',
+    }
+)
+
+# Настройки логирования для интеграции с Sentry
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'sentry': {
+            'level': 'ERROR',  # Отправлять только ошибки в Sentry
+            'class': 'sentry_sdk.integrations.logging.EventHandler',
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': 'application.log',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'sentry', 'file'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'sentry'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'sentry'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'ERROR',  # Только ошибки базы данных
+            'propagate': False,
+        },
+        'api': {
+            'handlers': ['console', 'sentry', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console', 'sentry'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}

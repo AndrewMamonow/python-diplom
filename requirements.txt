@@ -17,3 +17,4 @@ Pillow
 python-resize-image
 django-cleanup  # Автоматическая очистка старых файлов
 django-jet-reboot
+echo "sentry-sdk[django]"
