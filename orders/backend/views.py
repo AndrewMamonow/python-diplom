@@ -44,7 +44,10 @@ from .cache_utils import (
     QuerySetCache,
 )
 import logging
-
+from .throttling import (
+    LoginRateThrottle, RegisterRateThrottle, 
+    ProductListRateThrottle, OrderCreateRateThrottle
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,12 @@ class UserViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['user_type', 'is_active']
     
-    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
+    @action(
+        detail=False, 
+        methods=['post'], 
+        permission_classes=[permissions.AllowAny],
+        throttle_classes=[RegisterRateThrottle]
+        )
     def register(self, request):
         """Регистрация нового пользователя"""
         serializer = UserRegistrationSerializer(data=request.data)
@@ -87,7 +95,12 @@ class UserViewSet(viewsets.ModelViewSet):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
+    @action(
+        detail=False, 
+        methods=['post'], 
+        permission_classes=[permissions.AllowAny],
+        throttle_classes=[LoginRateThrottle] 
+        )
     def login(self, request):
         """Вход в систему"""
         from django.contrib.auth import authenticate
@@ -213,6 +226,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     filterset_fields = ['supplier', 'category', 'is_active']
     search_fields = ['name', 'sku', 'description']
     ordering_fields = ['name', 'price', 'created_at']
+    throttle_classes = [ProductListRateThrottle]
     
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -599,6 +613,12 @@ class OrderViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'created_at']
     ordering_fields = ['created_at', 'total_amount']
+    
+    def get_throttles(self):
+        """Применяем разные троттлеры для разных действий"""
+        if self.action == 'create':
+            return [OrderCreateRateThrottle()]
+        return super().get_throttles()
     
     def get_queryset(self):
         queryset = super().get_queryset()

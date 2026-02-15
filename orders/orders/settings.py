@@ -145,7 +145,23 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',          # 100 запросов в час для анонимов
+        'user': '1000/hour',         # 1000 запросов в час для пользователей
+        'login': '5/minute',         # 5 запросов в минуту для входа
+        'register': '10/hour',       # 10 запросов в час для регистрации
+        'product_list': '60/minute', # 60 запросов в минуту для списка товаров
+        'order_create': '20/hour',   # 20 запросов в час для создания заказов
+    },
+       
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    
+    
+    
 }
 
 # JWT settings
