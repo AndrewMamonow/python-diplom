@@ -32,6 +32,8 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'jet',
+    'jet.dashboard',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -295,3 +297,127 @@ IMAGE_OPTIMIZATION = {
     'progressive': True,  # Прогрессивные JPEG
     'optimize': True,  # Оптимизация PNG
 }
+
+# Настройки JET
+JET_DEFAULT_THEME = 'default'  # 'default', 'green', 'light-green', 'light-violet', 'light-blue', 'light-gray'
+JET_SIDE_MENU_COMPACT = False  # Компактное меню
+JET_INDEX_DASHBOARD = 'jet.dashboard.dashboard.DefaultIndexDashboard'
+JET_APP_INDEX_DASHBOARD = 'jet.dashboard.dashboard.DefaultAppIndexDashboard'
+
+# Темы
+JET_THEMES = [
+    {
+        'theme': 'default',  # тема по умолчанию
+        'color': '#47bac1',  # цвет кнопки в меню пользователя
+        'title': 'Default'
+    },
+    {
+        'theme': 'green',
+        'color': '#44b78b',
+        'title': 'Green'
+    },
+    {
+        'theme': 'light-green',
+        'color': '#2faa60',
+        'title': 'Light Green'
+    },
+    {
+        'theme': 'light-violet',
+        'color': '#a464c4',
+        'title': 'Light Violet'
+    },
+    {
+        'theme': 'light-blue',
+        'color': '#5EADDE',
+        'title': 'Light Blue'
+    },
+    {
+        'theme': 'light-gray',
+        'color': '#222',
+        'title': 'Light Gray'
+    }
+]
+
+# Настройки бокового меню
+JET_SIDE_MENU_ITEMS = [
+    {
+        'label': 'Пользователи и права',
+        'app_label': 'auth',
+        'items': [
+            {'name': 'auth.user'},
+            {'name': 'auth.group'},
+            {'name': 'api.user'},
+        ]
+    },
+    {
+        'label': 'Закупки',
+        'items': [
+            {'name': 'api.supplier'},
+            {'name': 'api.product'},
+            {'name': 'api.productimage'},
+            {'name': 'api.order'},
+            {'name': 'api.orderitem'},
+        ]
+    },
+    {
+        'label': 'Каталог',
+        'items': [
+            {'name': 'api.category'},
+            {'name': 'api.attribute'},
+            {'name': 'api.productattribute'},
+        ]
+    },
+    {
+        'label': 'Логи и статистика',
+        'items': [
+            {'name': 'api.priceupdatelog'},
+            {'name': 'admin.logentry'},
+        ]
+    },
+]
+
+# Настройки главной страницы
+JET_INDEX_DASHBOARD_ITEMS = [
+    {
+        'label': 'Статистика',
+        'items': [
+            {
+                'label': 'Заказы',
+                'model': 'api.order',
+                'children': [
+                    {
+                        'label': 'Новые заказы',
+                        'model': 'api.order',
+                        'query': {'status': 'pending'},
+                    },
+                    {
+                        'label': 'Подтверждённые',
+                        'model': 'api.order',
+                        'query': {'status': 'confirmed'},
+                    },
+                ]
+            },
+            {
+                'label': 'Товары',
+                'model': 'api.product',
+                'children': [
+                    {
+                        'label': 'Активные товары',
+                        'model': 'api.product',
+                        'query': {'is_active': True},
+                    },
+                    {
+                        'label': 'Товары без изображений',
+                        'model': 'api.product',
+                        'query': {'image__isnull': True},
+                    },
+                ]
+            },
+        ]
+    },
+]
+
+# Дополнительные настройки
+JET_CHANGE_FORM_SIBLING_LINKS = True  # Ссылки на соседние записи
+JET_SHOW_REMAINING_APPS = True  # Показывать остальные приложения
+JET_SHOW_REMAINING_APPS_TO_SUPERUSERS = True
