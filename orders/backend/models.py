@@ -1,10 +1,12 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser, Group, Permission
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.validators import MinValueValidator, RegexValidator, FileExtensionValidator
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 import re
+import os
+
 
 class User(AbstractUser):
     """Расширенная модель пользователя"""
@@ -28,6 +30,19 @@ class User(AbstractUser):
     supplier_code = models.CharField(max_length=50, unique=True, blank=True, null=True)
     accepts_orders = models.BooleanField(default=True)
     
+    avatar = models.ImageField(
+        upload_to='avatars/%Y/%m/%d/',
+        null=True,
+        blank=True,
+        validators=[
+            FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'webp'])
+        ],
+        help_text='Аватар пользователя (макс. 5МБ)'
+    )
+    avatar_small = models.ImageField(upload_to='avatars/small/', null=True, blank=True)
+    avatar_medium = models.ImageField(upload_to='avatars/medium/', null=True, blank=True)
+    avatar_large = models.ImageField(upload_to='avatars/large/', null=True, blank=True)
+    
     groups = models.ManyToManyField(
         Group,
         related_name='purchasing_user_set',
@@ -50,6 +65,14 @@ class User(AbstractUser):
     
     def __str__(self):
         return f"{self.username} ({self.get_user_type_display()})"
+    
+    def save(self, *args, **kwargs):
+        # Генерируем код поставщика при первом сохранении
+        if self.user_type == 'supplier' and not self.supplier_code:
+            from django.utils.crypto import get_random_string
+            self.supplier_code = f'SUP{get_random_string(8).upper()}'
+        
+        super().save(*args, **kwargs)
 
 
 class Supplier(models.Model):
@@ -175,6 +198,22 @@ class Product(models.Model):
     min_order_quantity = models.PositiveIntegerField(default=1)
     unit = models.CharField(max_length=20, default='шт')
     is_active = models.BooleanField(default=True)
+    
+    # Изображения товара
+    image = models.ImageField(
+        upload_to='products/%Y/%m/%d/',
+        null=True,
+        blank=True,
+        validators=[
+            FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'webp'])
+        ],
+        help_text='Основное изображение товара (макс. 5МБ)'
+    )
+    image_thumbnail = models.ImageField(upload_to='products/thumbnails/', null=True, blank=True)
+    image_small = models.ImageField(upload_to='products/small/', null=True, blank=True)
+    image_medium = models.ImageField(upload_to='products/medium/', null=True, blank=True)
+    image_large = models.ImageField(upload_to='products/large/', null=True, blank=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -190,8 +229,51 @@ class Product(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.sku})"
+    
+    def clean(self):
+        """Валидация изображения"""
+        super().clean()
+        if self.image:
+            # Проверка размера файла
+            if self.image.size > 5 * 1024 * 1024:  # 5MB
+                raise ValidationError({'image': 'Размер изображения не должен превышать 5МБ'})
+            
+            # Проверка типа файла
+            valid_extensions = ['jpg', 'jpeg', 'png', 'webp']
+            ext = os.path.splitext(self.image.name)[1][1:].lower()
+            if ext not in valid_extensions:
+                raise ValidationError({'image': f'Разрешены только следующие форматы: {", ".join(valid_extensions)}'})
 
 
+class ProductImage(models.Model):
+    """Дополнительные изображения товара"""
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='additional_images'
+    )
+    image = models.ImageField(
+        upload_to='products/additional/%Y/%m/%d/',
+        validators=[
+            FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'webp'])
+        ]
+    )
+    image_thumbnail = models.ImageField(upload_to='products/additional/thumbnails/', null=True, blank=True)
+    image_small = models.ImageField(upload_to='products/additional/small/', null=True, blank=True)
+    image_medium = models.ImageField(upload_to='products/additional/medium/', null=True, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'product_images'
+        verbose_name = 'Изображение товара'
+        verbose_name_plural = 'Изображения товаров'
+        ordering = ['sort_order', 'created_at']
+    
+    def __str__(self):
+        return f"{self.product.name} - Image {self.sort_order}"
+    
+    
 class ProductAttribute(models.Model):
     """Значения характеристик для товара"""
     product = models.ForeignKey(

@@ -31,6 +31,15 @@ urlpatterns = [
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
+     # User endpoints
+    path('users/<int:pk>/upload-avatar/', UserViewSet.as_view({'patch': 'upload_avatar'}), name='user-upload-avatar'),
+    path('users/<int:pk>/delete-avatar/', UserViewSet.as_view({'delete': 'delete_avatar'}), name='user-delete-avatar'),
+    
+    # Product endpoints
+    path('products/<int:pk>/upload-image/', ProductViewSet.as_view({'patch': 'upload_image'}), name='product-upload-image'),
+    path('products/<int:pk>/add-additional-image/', ProductViewSet.as_view({'post': 'add_additional_image'}), name='product-add-additional-image'),
+    path('products/<int:pk>/remove-additional-image/', ProductViewSet.as_view({'delete': 'remove_additional_image'}), name='product-remove-additional-image'),
+    
     # Order endpoints
     path('orders/<int:pk>/confirm/', 
          OrderViewSet.as_view({'post': 'confirm'}), 

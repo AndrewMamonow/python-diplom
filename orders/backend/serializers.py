@@ -3,13 +3,15 @@ from django.contrib.auth import get_user_model
 from django.core.validators import EmailValidator
 from decimal import Decimal
 import re
+import os
 
 from .models import (
     User, 
     Supplier, 
     Category, 
     Attribute, 
-    Product, 
+    Product,
+    ProductImage, 
     ProductAttribute, 
     Order, 
     OrderItem, 
@@ -21,20 +23,64 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     """Сериализатор пользователя"""
+    avatar_url = serializers.SerializerMethodField()
+    avatar_small_url = serializers.SerializerMethodField()
+    avatar_medium_url = serializers.SerializerMethodField()
+    avatar_large_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 
             'user_type', 'phone', 'company_name', 'address',
-            'supplier_code', 'accepts_orders', 'is_active'
+            'supplier_code', 'accepts_orders', 'is_active',
+            'avatar', 'avatar_url', 'avatar_small_url', 'avatar_medium_url', 'avatar_large_url'
         ]
-        read_only_fields = ['user_type', 'supplier_code']
+        read_only_fields = ['user_type', 'supplier_code', 'avatar_url', 
+                          'avatar_small_url', 'avatar_medium_url', 'avatar_large_url']
+        extra_kwargs = {
+            'avatar': {'write_only': True}
+        }
     
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Пользователь с таким email уже существует.")
         return value
     
+    def get_avatar_url(self, obj):
+        if obj.avatar:
+            return self.context['request'].build_absolute_uri(obj.avatar.url)
+        return None
+    
+    def get_avatar_small_url(self, obj):
+        if obj.avatar_small:
+            return self.context['request'].build_absolute_uri(obj.avatar_small.url)
+        return self.get_avatar_url(obj)  # Возвращаем оригинал если нет миниатюры
+    
+    def get_avatar_medium_url(self, obj):
+        if obj.avatar_medium:
+            return self.context['request'].build_absolute_uri(obj.avatar_medium.url)
+        return self.get_avatar_url(obj)
+    
+    def get_avatar_large_url(self, obj):
+        if obj.avatar_large:
+            return self.context['request'].build_absolute_uri(obj.avatar_large.url)
+        return self.get_avatar_url(obj)
+    
+    def validate_avatar(self, value):
+        if value:
+            # Проверка размера
+            if value.size > 5 * 1024 * 1024:  # 5MB
+                raise serializers.ValidationError("Размер аватара не должен превышать 5МБ")
+            
+            # Проверка типа файла
+            valid_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+            ext = os.path.splitext(value.name)[1].lower()
+            if ext not in valid_extensions:
+                raise serializers.ValidationError(
+                    f"Разрешены только следующие форматы: {', '.join(valid_extensions)}"
+                )
+        return value
     
 def validate_tax_number(value):
     """
@@ -222,16 +268,65 @@ class ProductAttributeSerializer(serializers.ModelSerializer):
         read_only_fields = ['attribute_name']
 
 
+class ProductImageSerializer(serializers.ModelSerializer):
+    """Сериализатор дополнительных изображений товара"""
+    image_url = serializers.SerializerMethodField()
+    thumbnail_url = serializers.SerializerMethodField()
+    small_url = serializers.SerializerMethodField()
+    medium_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'image', 'image_url', 'thumbnail_url', 'small_url', 'medium_url', 'sort_order']
+        read_only_fields = ['image_url', 'thumbnail_url', 'small_url', 'medium_url']
+        extra_kwargs = {
+            'image': {'write_only': True}
+        }
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            return self.context['request'].build_absolute_uri(obj.image.url)
+        return None
+    
+    def get_thumbnail_url(self, obj):
+        if obj.image_thumbnail:
+            return self.context['request'].build_absolute_uri(obj.image_thumbnail.url)
+        return self.get_image_url(obj)
+    
+    def get_small_url(self, obj):
+        if obj.image_small:
+            return self.context['request'].build_absolute_uri(obj.image_small.url)
+        return self.get_image_url(obj)
+    
+    def get_medium_url(self, obj):
+        if obj.image_medium:
+            return self.context['request'].build_absolute_uri(obj.image_medium.url)
+        return self.get_image_url(obj)
+
+
 class ProductSerializer(serializers.ModelSerializer):
     """Сериализатор товара"""
     supplier_name = serializers.CharField(source='supplier.company_name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     attributes = ProductAttributeSerializer(many=True, required=False)
+    # URL изображений
+    image_url = serializers.SerializerMethodField()
+    thumbnail_url = serializers.SerializerMethodField()
+    small_url = serializers.SerializerMethodField()
+    medium_url = serializers.SerializerMethodField()
+    large_url = serializers.SerializerMethodField()
+    additional_images = ProductImageSerializer(many=True, read_only=True)
     
     class Meta:
         model = Product
         fields = '__all__'
-        read_only_fields = ['supplier_name', 'category_name']
+        read_only_fields = [
+            'supplier_name', 'category_name', 'image_url', 'thumbnail_url',
+            'small_url', 'medium_url', 'large_url'
+        ]
+        extra_kwargs = {
+            'image': {'write_only': True}
+        }
     
     def create(self, validated_data):
         attributes_data = validated_data.pop('attributes', [])
@@ -258,6 +353,44 @@ class ProductSerializer(serializers.ModelSerializer):
         
         return instance
 
+    def get_image_url(self, obj):
+        if obj.image:
+            return self.context['request'].build_absolute_uri(obj.image.url)
+        return None
+    
+    def get_thumbnail_url(self, obj):
+        if obj.image_thumbnail:
+            return self.context['request'].build_absolute_uri(obj.image_thumbnail.url)
+        return self.get_image_url(obj)
+    
+    def get_small_url(self, obj):
+        if obj.image_small:
+            return self.context['request'].build_absolute_uri(obj.image_small.url)
+        return self.get_image_url(obj)
+    
+    def get_medium_url(self, obj):
+        if obj.image_medium:
+            return self.context['request'].build_absolute_uri(obj.image_medium.url)
+        return self.get_image_url(obj)
+    
+    def get_large_url(self, obj):
+        if obj.image_large:
+            return self.context['request'].build_absolute_uri(obj.image_large.url)
+        return self.get_image_url(obj)
+    
+    def validate_image(self, value):
+        if value:
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError("Размер изображения не должен превышать 5МБ")
+            
+            valid_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+            ext = os.path.splitext(value.name)[1].lower()
+            if ext not in valid_extensions:
+                raise serializers.ValidationError(
+                    f"Разрешены только следующие форматы: {', '.join(valid_extensions)}"
+                )
+        return value
+    
 
 class ProductImportSerializer(serializers.Serializer):
     """Сериализатор для импорта товаров"""

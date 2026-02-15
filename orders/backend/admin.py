@@ -7,7 +7,8 @@ from .models import (
     Category, 
     Attribute, 
     Product, 
-    ProductAttribute, 
+    ProductAttribute,
+    ProductImage, 
     Order, 
     OrderItem, 
     PriceUpdateLog
@@ -23,7 +24,7 @@ class UserAdmin(admin.ModelAdmin):
     search_fields = ['username', 'email', 'first_name', 'last_name']
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
-        ('Personal info', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Personal info', {'fields': ('first_name', 'last_name', 'email', 'avatar')}),
         ('User type', {'fields': ('user_type', 'supplier_code', 'accepts_orders')}),
         ('Company info', {'fields': ('company_name', 'phone', 'address')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser')}),
@@ -97,3 +98,9 @@ class PriceUpdateLogAdmin(admin.ModelAdmin):
     list_display = ['supplier', 'file_name', 'records_count', 'success_count', 'failed_count', 'created_at']
     list_filter = ['supplier', 'created_at']
     readonly_fields = ['created_at']
+ 
+    
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ['product', 'image']
+    search_fields = ['product']

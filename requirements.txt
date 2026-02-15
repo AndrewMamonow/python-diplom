@@ -12,3 +12,7 @@ djangorestframework-csv
 drf-spectacular
 # Redis caching
 django-redis
+# Image processing
+Pillow
+python-resize-image
+django-cleanup  # Автоматическая очистка старых файлов

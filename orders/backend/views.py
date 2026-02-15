@@ -21,7 +21,8 @@ from .models import (
     Category, 
     Attribute, 
     Product, 
-    ProductAttribute, 
+    ProductAttribute,
+    ProductImage, 
     Order, 
     PriceUpdateLog
 )
@@ -35,9 +36,16 @@ from .serializers import (
     ProductSerializer, 
     ProductImportSerializer, 
     OrderSerializer,
-    PriceUpdateLogSerializer
+    PriceUpdateLogSerializer,
+    ProductImageSerializer
 )
-from .tasks import send_order_confirmation_email, send_invoice_email
+from .tasks import (
+    send_order_confirmation_email, 
+    send_invoice_email, 
+    process_user_avatar, 
+    process_product_image, 
+    process_product_additional_image
+)
 from .cache_utils import (
     CacheManager, 
     CacheKeyBuilder, 
@@ -60,6 +68,7 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['user_type', 'is_active']
+    parser_classes = [MultiPartParser, FormParser]  # Для загрузки файлов
     
     @action(
         detail=False, 
@@ -73,7 +82,7 @@ class UserViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             user = serializer.save()
             
-            # Создаем профиль поставщика если нужно
+             # Создаем профиль поставщика если нужно
             if user.user_type == 'supplier':
                 Supplier.objects.create(
                     user=user,
@@ -81,7 +90,8 @@ class UserViewSet(viewsets.ModelViewSet):
                     contact_person=f"{user.first_name} {user.last_name}",
                     phone=user.phone,
                     email=user.email,
-                    address=user.address
+                    address=user.address,
+                    tax_number=getattr(user, 'tax_number', None)
                 )
             
             # Генерируем JWT токен
@@ -164,6 +174,65 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['patch'], parser_classes=[MultiPartParser, FormParser])
+    def upload_avatar(self, request, pk=None):
+        """
+        Загрузка аватара пользователя
+        
+        Загружает аватар и запускает асинхронную обработку миниатюр
+        """
+        user = self.get_object()
+        
+        # Проверяем, что пользователь редактирует свой аватар или это админ
+        if user != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'Вы можете изменить только свой аватар'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if 'avatar' not in request.FILES:
+            return Response(
+                {'error': 'Файл аватара обязателен'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Сохраняем аватар
+        user.avatar = request.FILES['avatar']
+        user.save()
+        
+        # Запускаем асинхронную обработку
+        process_user_avatar.delay(user.id)
+        
+        return Response({
+            'message': 'Аватар загружен. Идёт обработка миниатюр...',
+            'avatar_url': request.build_absolute_uri(user.avatar.url) if user.avatar else None
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['delete'])
+    def delete_avatar(self, request, pk=None):
+        """Удаление аватара пользователя"""
+        user = self.get_object()
+        
+        if user != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'Вы можете удалить только свой аватар'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if user.avatar:
+            user.avatar.delete()
+            user.avatar_small.delete()
+            user.avatar_medium.delete()
+            user.avatar_large.delete()
+            user.save()
+            
+            return Response({'message': 'Аватар удалён'}, status=status.HTTP_200_OK)
+        
+        return Response(
+            {'error': 'У пользователя нет аватара'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
 
 class SupplierViewSet(viewsets.ModelViewSet):
     """ViewSet для поставщиков"""
@@ -227,6 +296,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'sku', 'description']
     ordering_fields = ['name', 'price', 'created_at']
     throttle_classes = [ProductListRateThrottle]
+    parser_classes = [MultiPartParser, FormParser]
     
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -603,6 +673,104 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @action(detail=True, methods=['patch'], parser_classes=[MultiPartParser, FormParser])
+    def upload_image(self, request, pk=None):
+        """
+        Загрузка изображения товара
+        
+        Загружает изображение и запускает асинхронную обработку миниатюр
+        """
+        product = self.get_object()
+        
+        # Проверяем, что пользователь - владелец товара или админ
+        if product.supplier.user != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'Вы можете изменить только изображения своих товаров'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if 'image' not in request.FILES:
+            return Response(
+                {'error': 'Файл изображения обязателен'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Сохраняем изображение
+        product.image = request.FILES['image']
+        product.save()
+        
+        # Запускаем асинхронную обработку
+        process_product_image.delay(product.id)
+        
+        return Response({
+            'message': 'Изображение загружено. Идёт обработка миниатюр...',
+            'image_url': request.build_absolute_uri(product.image.url) if product.image else None
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def add_additional_image(self, request, pk=None):
+        """
+        Добавление дополнительного изображения товара
+        """
+        product = self.get_object()
+        
+        if product.supplier.user != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'Вы можете добавлять изображения только к своим товарам'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if 'image' not in request.FILES:
+            return Response(
+                {'error': 'Файл изображения обязателен'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Создаём новое изображение
+        image_obj = ProductImage.objects.create(
+            product=product,
+            image=request.FILES['image'],
+            sort_order=request.data.get('sort_order', 0)
+        )
+        
+        # Запускаем асинхронную обработку
+        process_product_additional_image.delay(image_obj.id)
+        
+        serializer = ProductImageSerializer(image_obj, context={'request': request})
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['delete'])
+    def remove_additional_image(self, request, pk=None):
+        """Удаление дополнительного изображения товара"""
+        product = self.get_object()
+        
+        image_id = request.query_params.get('image_id')
+        if not image_id:
+            return Response(
+                {'error': 'Параметр image_id обязателен'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            image_obj = ProductImage.objects.get(id=image_id, product=product)
+            
+            # Удаляем файлы
+            image_obj.image.delete()
+            image_obj.image_thumbnail.delete()
+            image_obj.image_small.delete()
+            image_obj.image_medium.delete()
+            image_obj.delete()
+            
+            return Response({'message': 'Изображение удалено'}, status=status.HTTP_200_OK)
+            
+        except ProductImage.DoesNotExist:
+            return Response(
+                {'error': 'Изображение не найдено'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+            
 class OrderViewSet(viewsets.ModelViewSet):
     """ViewSet для заказов"""
     queryset = Order.objects.select_related('client').prefetch_related(
