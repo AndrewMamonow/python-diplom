@@ -433,7 +433,7 @@ JET_CHANGE_FORM_SIBLING_LINKS = True  # Ссылки на соседние за�
 JET_SHOW_REMAINING_APPS = True  # Показывать остальные приложения
 JET_SHOW_REMAINING_APPS_TO_SUPERUSERS = True
 
-ENTRY_DSN = os.environ.get('SENTRY_DSN', 'https://your-sentry-dsn@sentry.io/123456')
+SENTRY_DSN = os.environ.get('SENTRY_DSN', 'https://your-sentry-dsn@sentry.io/123456')
 SENTRY_ENVIRONMENT = os.environ.get('SENTRY_ENVIRONMENT', 'development')
 SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', 0.1))
 
