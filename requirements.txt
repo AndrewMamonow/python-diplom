@@ -15,6 +15,9 @@ django-redis
 # Image processing
 Pillow
 python-resize-image
-django-cleanup  # Автоматическая очистка старых файлов
+django-cleanup
 django-jet-reboot
-echo "sentry-sdk[django]"
+sentry-sdk[django]
+# social_django
+social-auth-app-django
+social-auth-core

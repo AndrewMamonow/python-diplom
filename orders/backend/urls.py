@@ -13,6 +13,12 @@ from .views import (
     OrderViewSet,
     PriceUpdateLogViewSet
 )
+from .social_views import (
+    SocialAuthRedirectView,
+    SocialAuthCallbackView,
+    SocialAuthErrorView,
+    SocialAuthProvidersView
+)
 
 
 router = DefaultRouter()
@@ -26,6 +32,15 @@ router.register(r'price-update-logs', PriceUpdateLogViewSet, basename='price-upd
 
 urlpatterns = [
     path('', include(router.urls)),
+    
+     # Социальная аутентификация
+    path('auth/social/providers/', SocialAuthProvidersView.as_view(), name='social-providers'),
+    path('auth/social/<str:backend>/redirect/', SocialAuthRedirectView.as_view(), name='social-redirect'),
+    path('auth/social/<str:backend>/callback/', SocialAuthCallbackView.as_view(), name='social-callback'),
+    path('auth/social/error/', SocialAuthErrorView.as_view(), name='social-error'),
+    
+    # URL для python-social-auth
+    path('auth/social/', include('social_django.urls', namespace='social')),
     
     # JWT endpoints
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

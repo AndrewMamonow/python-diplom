@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'celery',
     'backend.apps.BackendConfig',
     'django_cleanup.apps.CleanupConfig',
+    'social_django',
 ]
 
 MIDDLEWARE = [
@@ -65,11 +66,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'social_django.middleware.SocialAuthExceptionMiddleware', 
     
      # Custom middleware
-    'api.middleware.SentryMiddleware',
-    'api.middleware.APIErrorMiddleware',
-    'api.middleware.QueryCountMiddleware',
+    # 'api.middleware.SentryMiddleware',
+    # 'api.middleware.APIErrorMiddleware',
+    # 'api.middleware.QueryCountMiddleware',
 ]
 
 ROOT_URLCONF = 'orders.urls'
@@ -173,9 +175,7 @@ REST_FRAMEWORK = {
         'order_create': '20/hour',   # 20 запросов в час для создания заказов
     },
        
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    
-    
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',   
     
 }
 
@@ -250,7 +250,7 @@ CACHES = {
                 'retry_on_timeout': True,
             }
         },
-        'KEY_PREFIX': 'purchasing_system',  # Префикс для всех ключей
+        'KEY_PREFIX': 'orders',  # Префикс для всех ключей
         'TIMEOUT': 60 * 15,  # 15 минут по умолчанию
     },
     'session': {
@@ -438,6 +438,15 @@ SENTRY_ENVIRONMENT = os.environ.get('SENTRY_ENVIRONMENT', 'development')
 SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', 0.1))
 
 # Инициализация Sentry
+def before_send_filter(event, hint):
+    """Фильтрация событий перед отправкой в Sentry"""
+    # Игнорируем 404 и другие не критичные ошибки
+    if 'exception' in event:
+        exc_type = event['exception']['values'][0]['type']
+        if exc_type in ['Http404', 'PermissionDenied', 'KeyboardInterrupt']:
+            return None  # Не отправляем в Sentry
+    return event
+
 sentry_sdk.init(
     dsn=SENTRY_DSN,
     integrations=[
@@ -445,34 +454,22 @@ sentry_sdk.init(
         CeleryIntegration(),
         RedisIntegration(),
         LoggingIntegration(
-            level=logging.INFO,        # Захватывать логи уровня INFO и выше
-            event_level=logging.ERROR  # Отправлять в Sentry как события только ошибки
+            level=logging.INFO,
+            event_level=logging.ERROR
         ),
     ],
-    
-    # Настройки
-    environment=SENTRY_ENVIRONMENT,  # 'development', 'staging', 'production'
-    traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,  # Процент отслеживания запросов для профилирования
-    send_default_pii=True,  # Отправлять персональные данные (используйте осторожно!)
-    request_bodies='always',  # Всегда отправлять тела запросов
-    
-    # Фильтрация ошибок
-    ignore_errors=[
-        'django.http.Http404',
-        'django.core.exceptions.PermissionDenied',
-        KeyboardInterrupt,
-    ],
-    
-    # Перед отправкой события можно модифицировать его
-    before_send=lambda event, hint: event,
-    
-    # Теги по умолчанию
-    tags={
-        'project': 'purchasing-system',
-        'service': 'backend',
-    }
+    environment=SENTRY_ENVIRONMENT,
+    traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+    send_default_pii=True,  # ВНИМАНИЕ: в продакшене установите False!
+    max_request_body_size='always',  
+    before_send=before_send_filter,  # Фильтрация вместо ignore_errors
 )
 
+# Установка глобальных тегов 
+if SENTRY_DSN:
+    sentry_sdk.set_tag("project", "orders")
+    sentry_sdk.set_tag("service", "backend")
+    
 # Настройки логирования для интеграции с Sentry
 LOGGING = {
     'version': 1,
@@ -534,3 +531,99 @@ LOGGING = {
         },
     },
 }
+
+# Настройки социальной аутентификации
+AUTHENTICATION_BACKENDS = (
+    # Социальные бэкенды
+    'social_core.backends.google.GoogleOAuth2',
+    'social_core.backends.github.GithubOAuth2',
+    'social_core.backends.vk.VKOAuth2',
+    'social_core.backends.yandex.YandexOAuth2',
+    
+    # Стандартная аутентификация Django
+    'django.contrib.auth.backends.ModelBackend',
+)
+
+# URL для перенаправления после аутентификации
+LOGIN_URL = '/api/auth/login/'
+LOGIN_REDIRECT_URL = '/api/users/me/'
+LOGOUT_REDIRECT_URL = '/'
+
+# Настройки социальных провайдеров (используйте переменные окружения!)
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get('GOOGLE_CLIENT_ID', '')
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+
+SOCIAL_AUTH_GITHUB_KEY = os.environ.get('GITHUB_CLIENT_ID', '')
+SOCIAL_AUTH_GITHUB_SECRET = os.environ.get('GITHUB_CLIENT_SECRET', '')
+SOCIAL_AUTH_GITHUB_SCOPE = ['user:email']
+
+SOCIAL_AUTH_VK_OAUTH2_KEY = os.environ.get('VK_APP_ID', '')
+SOCIAL_AUTH_VK_OAUTH2_SECRET = os.environ.get('VK_APP_SECRET', '')
+SOCIAL_AUTH_VK_OAUTH2_SCOPE = ['email']
+
+SOCIAL_AUTH_YANDEX_OAUTH2_KEY = os.environ.get('YANDEX_CLIENT_ID', '')
+SOCIAL_AUTH_YANDEX_OAUTH2_SECRET = os.environ.get('YANDEX_CLIENT_SECRET', '')
+
+# Настройки безопасности
+SOCIAL_AUTH_LOGIN_ERROR_URL = '/api/auth/error/'
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/api/users/me/'
+SOCIAL_AUTH_NEW_USER_REDIRECT_URL = '/api/users/me/'
+
+# Создавать пользователей автоматически
+SOCIAL_AUTH_USER_MODEL = 'backend.User'
+SOCIAL_AUTH_USERNAME_IS_FULL_NAME = False
+SOCIAL_AUTH_SLUGIFY_USERNAMES = True
+SOCIAL_AUTH_CLEAN_USERNAMES = True
+
+# Разрешить только определённые домены
+SOCIAL_AUTH_GOOGLE_OAUTH2_WHITELISTED_DOMAINS = ['example.com']
+SOCIAL_AUTH_FACEBOOK_WHITELISTED_DOMAINS = ['example.com']
+
+# Защита от атак
+SOCIAL_AUTH_REDIRECT_IS_HTTPS = not DEBUG  # В продакшене только HTTPS
+SOCIAL_AUTH_FIELDS_STORED_IN_SESSION = ['state']
+SOCIAL_AUTH_INACTIVE_USER_URL = '/api/auth/inactive/'
+
+# Кастомизация создания пользователей
+SOCIAL_AUTH_PIPELINE = (
+    # Получение социального аккаунта
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    
+    # Получение данных пользователя
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.social_auth.associate_by_email',
+    
+    # Создание пользователя
+    'social_core.pipeline.user.create_user',
+    
+    # Создание профиля пользователя в нашей системе
+    'api.pipeline.create_user_profile',
+    
+    # Сохранение социального аккаунта
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    
+    # Обновление данных пользователя
+    'social_core.pipeline.user.user_details',
+    
+    # Генерация JWT токена
+    'api.pipeline.generate_jwt_token',
+)
+
+# Настройки для безопасности
+SOCIAL_AUTH_STRATEGY = 'social_django.strategy.DjangoStrategy'
+SOCIAL_AUTH_STORAGE = 'social_django.models.DjangoStorage'
+
+# Ограничение попыток входа
+SOCIAL_AUTH_LOGIN_RATE_LIMIT = 10  # 10 попыток в минуту
+SOCIAL_AUTH_LOGIN_RATE_LIMIT_PERIOD = 60
+
+# Валидация состояния
+SOCIAL_AUTH_STATE_PARAMETER = True
+SOCIAL_AUTH_NONCE_PARAMETER = True
+
+# Защита от подделки запросов
+SOCIAL_AUTH_REDIRECT_STATE = True
