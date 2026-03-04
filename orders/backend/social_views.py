@@ -1,7 +1,6 @@
 """
 Views для социальной аутентификации
 """
-from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from rest_framework.views import APIView
 from rest_framework.response import Response

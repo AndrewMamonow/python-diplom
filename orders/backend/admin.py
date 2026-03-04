@@ -1,8 +1,5 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.db.models import Count, Sum, Q
-from django.utils import timezone
-from datetime import timedelta
 from rest_framework.authtoken.models import TokenProxy
 from .models import (
     User, 

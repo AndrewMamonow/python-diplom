@@ -1,6 +1,6 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models import User, Supplier, Product, Order, Category
+from .models import User, Product, Order, Category
 from .cache_utils import invalidate_cache_on_save, invalidate_cache_on_delete
 
 # Подключаем сигналы для инвалидации кэша

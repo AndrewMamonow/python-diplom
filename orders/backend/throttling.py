@@ -2,7 +2,6 @@
 Кастомные троттлеры для различных сценариев
 """
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
-from rest_framework.exceptions import Throttled
 import logging
 
 logger = logging.getLogger(__name__)

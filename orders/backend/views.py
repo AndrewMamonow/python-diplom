@@ -1,8 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
-from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import Q, Sum
+from django.db.models import Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from decimal import Decimal
 from rest_framework import viewsets, status, permissions
